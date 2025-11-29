@@ -6,7 +6,7 @@ This module provides utility function for the pipeline run.
 import tomllib
 import os
 import re
-import sqlparse
+from sqlglot import parse_one
 from sqlalchemy import create_engine, Connection
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -84,11 +84,7 @@ class Utils:
                 sql = rsc_template.render(
                     name=name,
                 )
-                return sqlparse.format(
-                    re.sub(r"\n+", "\n", sql).strip().strip(";"),
-                    reindent=True,
-                    keyword_case="upper",
-                )
+                return parse_one(sql, error_level="IGNORE").sql(pretty=True)
 
             # Validate that all keys in the template are present in definition
             parsed_rsc_template = env.parse(template)
@@ -119,15 +115,12 @@ class Utils:
                 **sanitized_definition,
             )
             # Clean excrea new lines.
-            sql_clean = re.sub(r"\n+", "\n", sql)
-            # Remove leading/trailing whitespaces and semicolon.
-            sql_clean = sql_clean.strip()
-            sql_clean = sql_clean.strip(";")
+            sql_clean = re.sub(r"\n+", "\n", sql).strip().strip(";")
 
         except (KeyError, TemplateSyntaxError, UndefinedError) as e:
             raise TemplateFileError(name, self.resources_path, e) from e
 
-        return sqlparse.format(sql_clean, reindent=True, keyword_case="upper")
+        return parse_one(sql_clean, error_level="IGNORE").sql(pretty=True)
 
     def dependencies_map(self) -> dict:
         """Create a topographic depencies map of the resource."""
@@ -313,7 +306,7 @@ class Utils:
         self,
         conn:Connection,
         sql:str,
-        wait_time:int|None,
+        wait_time:int|None = None,
     ) -> None:
         """Execute rendered templates using SQL database connection."""
         try:
