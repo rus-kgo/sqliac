@@ -9,6 +9,8 @@ This module provides:
 import json
 from rich.console import Console
 from rich.syntax import Syntax
+from rich.panel import Panel
+from rich.console import Group
 
 # Maximum number of characters to include in SQL preview in error messages
 SQL_PREVIEW_MAX_LENGTH = 500
@@ -110,61 +112,91 @@ class DependencyError(Exception):
 class SQLExecutionError(Exception):
     """Raised when SQL execution fails in the database."""
 
-    def __init__(
+    def __init__(  # noqa: D107
         self,
         error: Exception,
         sql: str = None,
-        database_system: str = None,
+        resource_type: str = None,
+        resource_name: str = None,
+        action: str = None,
     ):
-        """Initialize the exception with detailed error information.
+        console = Console()
 
-        Args:
-            error (Exception): The original SQLAlchemy or database exception.
-            sql (str, optional): The SQL statement that failed.
-            resource_type (str, optional): Type of database resource (table, view, role, etc.).
-            resource_name (str, optional): Name of the resource being operated on.
-            action (str, optional): The action being performed (created, dropped, altered, etc.).
-            database_system (str, optional): The database system (snowflake, sqlite, etc.).
-
-        """
-        # Extract error details from SQLAlchemy exception
+        # Error details
         error_message = str(error)
-        error_code = getattr(error, "code", None)
         orig_error = getattr(error, "orig", None)
+        db_error_msg = str(orig_error) if orig_error else error_message
 
-        # Build the colored error message for GitHub Actions
-        parts = ["[bold red3]SQL EXECUTION ERROR[/bold red3]"]
+        # Optional context line
+        operation_line = None
+        if action and resource_type and resource_name:
+            operation_line = (
+                f"[yellow]operation:[/yellow] {action.upper()} {resource_type.upper()} "
+                f"→ [bold]{resource_name}[/bold]"
+            )
 
-        # Add database system if available
-        if database_system:
-            parts.append(f"Database System: [bold cyan3]{database_system.upper()}[/bold cyan3]")
+        # Build main message in a structured, compiler-style format
+        message_lines = []
 
-        # Add error code if available
-        if error_code:
-            parts.append(f"[bold red3]Error Code: {error_code}[/bold red3]")
+        # OPERATION CONTEXT
+        if operation_line:
+            message_lines.append(operation_line)
 
-        # Add the original error message
-        parts.append("\n[bold red3]Error Message:[/bold red3]")
-        parts.append(f"[bold red3]{error_message}[/bold red3]")
+        # ERROR MESSAGE BODY
+        message_lines.append(f"[red]message:[/red] {db_error_msg}")
 
-        # Add original database error if different from SQLAlchemy wrapper
-        if orig_error and str(orig_error) != error_message:
-            parts.append("\n[bold red3]Database Error:[/bold red3]")
+        # HELP / SUGGESTION (only if we can infer anything)
+        # You can expand this with smarter database-specific heuristics
+        if "syntax" in db_error_msg.lower():
+            message_lines.append(
+                "[cyan]help:[/cyan] check SQL syntax near the reported location",
+            )
+
+        # Combine into a Rich Group
+        header_group = Group(*message_lines)
+
+        # Render header panel
+        console.print(
+            Panel(
+                header_group,
+                border_style="red",
+                title="[bold red]SQL Execution Error[/bold red]",
+                expand=False,
+            ),
+        )
+
+        # ───────────────────────────────────────────────────────────────
+        # SQL CODE FRAME
+        # ───────────────────────────────────────────────────────────────
         if sql:
-            sql_preview = sql if len(sql) <= SQL_PREVIEW_MAX_LENGTH else sql[:SQL_PREVIEW_MAX_LENGTH] + "..."
-            pretty_sql = Syntax(sql_preview, "sql", theme="monokai", line_numbers=False)
-            parts.append("\n[bold red3]SQL Statement:[/bold red3]")
-            parts.append(pretty_sql)
+            sql_preview = (
+                sql if len(sql) <= SQL_PREVIEW_MAX_LENGTH
+                else sql[:SQL_PREVIEW_MAX_LENGTH] + "..."
+            )
 
-        # Join all parts into final message
-        message = "\n".join(parts)
+            console.print(
+                Panel(
+                    Syntax(sql_preview, "sql", theme="monokai", line_numbers=True),
+                    title="[yellow]SQL Statement[/yellow]",
+                    border_style="yellow",
+                    expand=False,
+                ),
+            )
 
-        Console().print(message)
+        # ───────────────────────────────────────────────────────────────
+        # TRACEBACK MESSAGE FOR PYTHON ERROR
+        # (kept short, per best practices)
+        # ───────────────────────────────────────────────────────────────
+        if action and resource_type and resource_name:
+            msg = f"{action.upper()} {resource_type.upper()} failed for '{resource_name}'"
+        else:
+            msg = "SQL execution failed"
 
-        super().__init__("\nEnd.")
+        super().__init__(msg)
 
-        # Store attributes for programmatic access
+        # Store metadata
         self.original_error = error
         self.sql = sql
-        self.database_system = database_system
-        self.error_code = error_code
+        self.resource_type = resource_type
+        self.resource_name = resource_name
+        self.action = action

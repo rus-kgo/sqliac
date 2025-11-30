@@ -224,7 +224,7 @@ class TestUtils(unittest.TestCase):
         }
 
         # This scrip will fail. The success is in removing the special charachters.
-        expected = "CREATE ROLE bi_god_role\nDROP ALL haha"
+        expected = "CREATE ROLE bi_god_role drop all  haha"
 
         result = self.loader.render_templates(
             template=template,
@@ -304,7 +304,7 @@ class TestUtils(unittest.TestCase):
             )
         """
         invalid_sql = """
-            CREATE TABLE IF NOT EXISTS actors (
+            CREATE IF NOT EXISTS actors (
                 id INTEGER PRIMARY KEY
                 name TEXT NOT NULL
             )
@@ -314,20 +314,25 @@ class TestUtils(unittest.TestCase):
             self.loader.execute_rendered_sql_template(
                 conn=conn,
                 sql=valid_sql,
+                operation="Apply",
+                depends_on={
+                    "role": ["bi_admin_role"],
+                },
+                wait_time=1,
             )
         except Exception as e:
             self.fail(f"CREATE TABLE failed with exception: {e}")
 
-        
+
         # Asert invalid sql
         with self.assertRaises(SQLExecutionError):
             self.loader.execute_rendered_sql_template(
                 conn=conn,
                 sql=invalid_sql,
+                operation="Apply",
             )
 
 
-        
 
 
 if __name__ == "__main__":

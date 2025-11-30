@@ -19,10 +19,10 @@ inputs:
     description: 'Do not use unless using your own resources. Resources path should point to the file in the repo that contains the resource sql templates.'
     required: true
     default: '/sqliac/resources.toml'
-  dry-run:
-    description: 'When dry run is true, the pipeline will not make any changes to Snowflake.'
-    required: false
-    default: 'false'
+  operation:
+    description: 'The options are: Plan, Apply. The plan will not execute the SQL query.
+    required: true
+    default: Plan
 
 runs:
   using: 'docker'

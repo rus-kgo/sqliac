@@ -13,7 +13,6 @@ from utils import Utils
 from errors import TemplateFileError, FileError
 from drift import Drift
 from rich.console import Console
-from rich.syntax import Syntax
 from dataclasses import dataclass
 
 
@@ -38,7 +37,7 @@ class InputConfig:
     database_system: str
     definitions_path: str | None
     resources_path: str | None
-    dry_run: bool
+    operation: bool
     run_mode: str
 
 def parse_env() -> InputConfig:
@@ -62,14 +61,14 @@ def parse_env() -> InputConfig:
             ),
         )
 
-    dry_run = str_to_bool(os.environ.get("INPUT_DRY-RUN", "false"))
+    operation = os.environ.get("INPUT_OPERATION", "Plan")
     run_mode = os.environ.get("INPUT_RUN-MODE", "default")
     return InputConfig(
         workspace=workspace,
         database_system=database_system,
         definitions_path=definitions_path,
         resources_path=resources_path,
-        dry_run=dry_run,
+        operation=operation,
         run_mode=run_mode,
     )
 
@@ -142,16 +141,13 @@ def run(config: InputConfig) -> None:  # noqa: PLR0912, PLR0915
                                 iac_action=db_sys_resources[resource_type]["iac_action"]["create"],
                             )
 
-                            Console().print(f"\n[bold green3] + Create '{resource_type}'[/bold green3]")
-                            pretty_sql = Syntax(sql, "sql", theme="monokai", line_numbers=False)
-                            Console().print(pretty_sql)
-
-                            if not config.dry_run:
-                                utils.execute_rendered_sql_template(
-                                    connection=conn,
-                                    sql=sql,
-                                    wait_time=rsc.get("wait_time", None),
-                                )
+                            utils.execute_rendered_sql_template(
+                                connection=conn,
+                                sql=sql,
+                                dependencies=rsc_drift["definition"]["depends_on"],
+                                operation=config.operation,
+                                wait_time=rsc.get("wait_time", None),
+                            )
 
                         # Do nothing if the the object has not drifted, definition and the state are the same.
                         elif rsc_drift["iac_action"]=="no action":
@@ -165,17 +161,13 @@ def run(config: InputConfig) -> None:  # noqa: PLR0912, PLR0915
                                 name=resource_name,
                                 iac_action=db_sys_resources[resource_type]["iac_action"]["alter"],
                             )
-
-                            Console().print(f"\n[bold sandy_brown] ~ Alter '{resource_type}'[/bold sandy_brown]")
-                            pretty_sql = Syntax(sql, "sql", theme="monokai", line_numbers=False)
-                            Console().print(pretty_sql)
-
-                            if not config.dry_run:
-                                utils.execute_rendered_sql_template(
-                                    connection=conn,
-                                    sql=sql,
-                                    wait_time=rsc.get("wait_time", None),
-                                )
+                            utils.execute_rendered_sql_template(
+                                connection=conn,
+                                sql=sql,
+                                dependencies=rsc_drift["definition"]["depends_on"],
+                                operation=config.operation,
+                                wait_time=rsc.get("wait_time", None),
+                            )
 
                     elif config.run_mode.lower() == "destroy":
                         sql = utils.render_templates(
@@ -185,16 +177,13 @@ def run(config: InputConfig) -> None:  # noqa: PLR0912, PLR0915
                             iac_action=db_sys_resources[resource_type]["iac_action"]["drop"],
                         )
 
-                        Console().print(f"\n[bold red3] - Drop '{resource_type}'[/bold red3]")
-                        pretty_sql = Syntax(sql, "sql", theme="monokai", line_numbers=False)
-                        Console().print(pretty_sql)
-
-                        if not config.dry_run:
-                            utils.execute_rendered_sql_template(
-                                connection=conn,
-                                sql=sql,
-                                wait_time=rsc.get("wait_time", None),
-                            )
+                        utils.execute_rendered_sql_template(
+                            connection=conn,
+                            sql=sql,
+                            dependencies=rsc_drift["definition"]["depends_on"],
+                            operation=config.operation,
+                            wait_time=rsc.get("wait_time", None),
+                        )
 
         except Exception as err:
             conn.close()

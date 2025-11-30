@@ -12,8 +12,12 @@ from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
 from collections import deque
 from jinja2 import Environment, meta, UndefinedError, TemplateSyntaxError
-from rich.console import Console
+from rich.console import Console, Group
+from rich.panel import Panel
+from rich.syntax import Syntax
+from rich.text import Text
 import time
+import logging
 
 from errors import (
     DefinitionKeyError,
@@ -23,6 +27,7 @@ from errors import (
     SQLExecutionError,
 )
 
+logging.getLogger("sqlglot").setLevel(logging.CRITICAL)
 
 class Utils:
     """Utility helpers for template rendering, dependency resolution, and database connections."""
@@ -303,23 +308,69 @@ class Utils:
         return engine.connect()
 
     def execute_rendered_sql_template(
-        self,
-        conn:Connection,
-        sql:str,
-        wait_time:int|None = None,
-    ) -> None:
-        """Execute rendered templates using SQL database connection."""
-        try:
-            conn.exec_driver_sql(sql)
-            if wait_time:
-                time.sleep(wait_time)
-        except Exception as err:
-            raise SQLExecutionError(
-                error=err,
-                sql=sql,
-                ) from err
+            self,
+            conn: Connection,
+            sql: str,
+            operation: str,
+            depends_on: dict | None = None,
+            wait_time: int | None = None,
+        ) -> None:
+        """Execute the sql statement from template."""
+        message_lines = []
+
+        sql_pretty = Syntax(
+            sql,
+            "sql",
+            theme="monokai",
+            line_numbers=True,
+            indent_guides=False,
+            padding=(0, 1),
+        )
+
+        if wait_time:
+            message_lines.append(Text.assemble(
+                ("wait time: ", "cyan"),
+                (str(wait_time), None),
+                (" s."),
+            ))
+
+            if depends_on:
+                dep_lines = "\n".join(f"- {k}: {v}" for k, v in depends_on.items())
+                message_lines.append(
+                    Text.assemble(("depends on:\n", "cyan"), (dep_lines, None)),
+                )
+
+            message_lines.append(Text())
+
+        if operation == "Apply":
+            try:
+                conn.exec_driver_sql(sql)
+            except Exception as err:
+                raise SQLExecutionError(error=err, sql=sql) from err
+
+            color = "green"
+            title = "[green]Apply[/green]"
+
         else:
-            self.console.print("[bold green3]\nSQL EXECUTION SUCCESSFULL[/bold green3]")
+            color = "yellow"
+            title = "[yellow]Plan[/yellow]"
+
+        message_lines.append(Text("sql statement:", style=color))
+        message_lines.append(sql_pretty)
+
+        msg = Group(*message_lines)
+
+        self.console.print(
+            Panel(
+                msg,
+                title=title,
+                expand=False,
+                border_style=color,
+            ),
+        )
+
+        if operation == "Apply" and wait_time:
+            time.sleep(wait_time)
 
     def zip_python_proc(self, file_path: str):
         """Zip python source code for a procedure in a database."""
