@@ -78,3 +78,89 @@ flowchart TD
 
 Test coverage:
 - `tests/test_drift_check.py::TestDriftCheck::test_no_action_matches`
+
+
+#### How to establish the connections
+You have to load the drivers for each type of database 
+You can use pip isntall for snowflake and oracle db
+```
+pip install snowflake-connector-python
+pip install snowflake-sqlalchemy
+
+pip install oracledb
+```
+Then the connection for snowflake for example will look like the below
+
+```python
+
+import tomllib
+import os
+import snowflake.sqlalchemy
+from sqlalchemy import create_engine, text
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.backends import default_backend
+
+
+# --- Snowflake connection params ---
+user = "DBT_CLI_SERVICE_ACCOUNT"
+account = "bl67109-ajwa_dev"
+warehouse = "DBT_CLI_WAREHOUSE"
+database = "AJWA_MODEL"
+schema = "PBI_AUDIT"
+role = "DBT_CLI_ROLE"
+
+private_key_path = ".ssh/dev/snowflake_dbt_cli_key.p8"
+
+# --- Load private key ---
+with open(private_key_path, "rb") as key_file:
+    p_key = serialization.load_pem_private_key(
+        key_file.read(),
+        password=None,
+        backend=default_backend()
+    )
+
+private_key_bytes = p_key.private_bytes(
+    encoding=serialization.Encoding.DER,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+)
+
+# --- Build SQLAlchemy URL ---
+# Note: private_key must be passed directly in the URL parameters.
+url = (
+    f"snowflake://{user}@{account}/{database}/{schema}"
+    f"?warehouse={warehouse}"
+    f"&role={role}"
+)
+
+engine = create_engine(
+    url,
+    connect_args={
+        "private_key": private_key_bytes
+    },
+    echo=False
+)
+
+# Test
+conn = engine.connect()
+
+
+###################################
+# Loading the key from env variable
+
+import os
+from cryptography.hazmat.primitives import serialization
+
+pem_key = os.environ["SNOWFLAKE_PRIVATE_KEY"].encode("utf-8")
+
+p_key = serialization.load_pem_private_key(
+    pem_key,
+    password=None,
+)
+
+private_key_bytes = p_key.private_bytes(
+    encoding=serialization.Encoding.DER,
+    format=serialization.PrivateFormat.PKCS8,
+    encryption_algorithm=serialization.NoEncryption(),
+)
+```
