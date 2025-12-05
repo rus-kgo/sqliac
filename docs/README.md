@@ -95,7 +95,7 @@ Then the connection for snowflake for example will look like the below
 
 import tomllib
 import os
-import snowflake.sqlalchemy
+## no need to import snowflake.sqlalchemy, just installing with pip is enough
 from sqlalchemy import create_engine, text
 from cryptography.hazmat.primitives import serialization
 from cryptography.hazmat.backends import default_backend
@@ -163,4 +163,51 @@ private_key_bytes = p_key.private_bytes(
     format=serialization.PrivateFormat.PKCS8,
     encryption_algorithm=serialization.NoEncryption(),
 )
+```
+
+
+##### Possible logging configuration
+
+```python
+import logging
+import sys
+
+def configure_sqlalchemy_logging(log_file_path="sqlalchemy_debug.log"):
+    """
+    Configure SQLAlchemy logging in a way that works well both locally and inside GitHub Actions.
+    """
+    logger_name = "sqlalchemy.engine.Engine.github_engine"
+    logger = logging.getLogger(logger_name)
+    logger.setLevel(logging.INFO)
+
+    # Make idempotent: clear handlers only for our logger
+    if logger.hasHandlers():
+        logger.handlers.clear()
+
+    # Common log format: timestamp, level, message
+    formatter = logging.Formatter(
+        "%(asctime)s - %(levelname)s - %(message)s"
+    )
+
+    # ====== 1. Console output (GitHub Actions captures this cleanly) ======
+    console_handler = logging.StreamHandler(sys.stdout)
+    console_handler.setLevel(logging.INFO)
+    console_handler.setFormatter(formatter)
+    logger.addHandler(console_handler)
+
+    # ====== 2. File logging (useful for uploading as artifact) ======
+    file_handler = logging.FileHandler(log_file_path, mode="w")
+    file_handler.setLevel(logging.INFO)
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+
+    # Do NOT disable logger propagation in CI; 
+    # GitHub Actions does not duplicate console logs like Jupyter does.
+    logger.propagate = False
+
+    return logger
+
+# Initialize logger
+logger = configure_sqlalchemy_logging()
+
 ```
